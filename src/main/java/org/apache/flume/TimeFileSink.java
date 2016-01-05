@@ -76,7 +76,8 @@ public class TimeFileSink extends AbstractSink implements Configurable {
         String currentHour = df.format(new Date());
 
         //判断当前文件是否为空,如果为空,则直接跳过,创建新的文件流,老的文件流关闭
-        if (currentFile != null) {
+        if (outputStream != null) {
+            //说明已经文件已经了气氛
             if (!currentFile.getName().equals(currentHour)) {
 
                 logger.debug("Closing file {}", currentFile);
