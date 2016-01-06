@@ -1,6 +1,7 @@
 package org.apache.flume;
 
 import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.flume.conf.Configurable;
 import org.apache.flume.instrumentation.SinkCounter;
 import org.apache.flume.serialization.EventSerializer;
@@ -12,6 +13,9 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Created by zhangzhikuan on 16/1/5.
@@ -41,6 +45,10 @@ public class TimeFileSink extends AbstractSink implements Configurable {
     private File currentFile = null;
 
 
+    //定时判断是否需要进行切分文件
+    private ScheduledExecutorService rollService;
+    private Boolean shouldRotate = false;
+
     public void configure(Context context) {
 
         //序列化
@@ -68,19 +76,31 @@ public class TimeFileSink extends AbstractSink implements Configurable {
         logger.info("Starting {}...", this);
         sinkCounter.start();
         super.start();
-        logger.info("RollingFileSink {} started.", getName());
+
+
+        //定时检查是否达到了切分的标准,每秒检查一次
+        this.rollService = Executors.newScheduledThreadPool(1, (new ThreadFactoryBuilder()).setNameFormat("TimeFileSink-" + Thread.currentThread().getId() + "-%d").build());
+        this.rollService.scheduleAtFixedRate(new Runnable() {
+            public void run() {
+                //当前小时
+                String currentHour = df.format(new Date());
+                //是否和文件名一直
+                if (!getCurrentFile().getName().equals(currentHour)) {
+                    logger.debug("Marking time to rotate file {}", getCurrentFile());
+                    shouldRotate = true;
+                }
+            }
+        }, 1, 1, TimeUnit.SECONDS);
+
+        logger.info("TimeFileSink {} started.", getName());
     }
 
     public Status process() throws EventDeliveryException {
 
-        String currentHour = df.format(new Date());
-
-        //判断当前文件是否为空,如果为空,则直接跳过,创建新的文件流,老的文件流关闭
-        if (outputStream != null) {
-            //说明已经文件已经了气氛
-            if (!currentFile.getName().equals(currentHour)) {
-
-                logger.debug("Closing file {}", currentFile);
+        if (this.shouldRotate) {
+            //判断当前文件是否为空,如果为空,则直接跳过,创建新的文件流,老的文件流关闭
+            if (outputStream != null) {
+                logger.debug("Closing file {}", this.getCurrentFile());
                 try {
                     serializer.flush();
                     serializer.beforeClose();
@@ -88,23 +108,24 @@ public class TimeFileSink extends AbstractSink implements Configurable {
                     sinkCounter.incrementConnectionClosedCount();
                 } catch (IOException e) {
                     sinkCounter.incrementConnectionFailedCount();
-                    throw new EventDeliveryException("Unable to rotate file " + currentFile + " while delivering event", e);
+                    throw new EventDeliveryException("Unable to rotate file " + this.getCurrentFile() + " while delivering event", e);
                 } finally {
+                    //重新开始
                     serializer = null;
                     outputStream = null;
+                    currentFile = null;
                 }
-
             }
         }
+
 
         //如果文件流为空,则重新打开新的文件
         if (outputStream == null) {
             //打开文件
-            currentFile = new File(String.format(this.directory + "/" + currentHour));
-            logger.debug("Opening output stream for file {}", currentFile);
+            logger.debug("Opening output stream for file {}", this.getCurrentFile());
             try {
                 //打开文件流
-                outputStream = new BufferedOutputStream(new FileOutputStream(currentFile, true));
+                outputStream = new BufferedOutputStream(new FileOutputStream(this.getCurrentFile(), true));
                 //序列化文件吸入
                 serializer = EventSerializerFactory.getInstance(serializerType, serializerContext, outputStream);
                 serializer.afterCreate();
@@ -112,7 +133,7 @@ public class TimeFileSink extends AbstractSink implements Configurable {
                 sinkCounter.incrementConnectionCreatedCount();
             } catch (IOException e) {
                 sinkCounter.incrementConnectionFailedCount();
-                throw new EventDeliveryException("Failed to open file [" + currentFile + "] while delivering event", e);
+                throw new EventDeliveryException("Failed to open file [" + this.getCurrentFile() + "] while delivering event", e);
             }
         }
 
@@ -172,7 +193,7 @@ public class TimeFileSink extends AbstractSink implements Configurable {
         super.stop();
 
         if (outputStream != null) {
-            logger.debug("Closing file {}", currentFile);
+            logger.debug("Closing file {}", this.getCurrentFile());
 
             try {
                 serializer.flush();
@@ -185,9 +206,28 @@ public class TimeFileSink extends AbstractSink implements Configurable {
             } finally {
                 outputStream = null;
                 serializer = null;
+                currentFile = null;
             }
         }
+
+        //关闭定时任务
+        while (!rollService.isTerminated()) {
+            try {
+                rollService.awaitTermination(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                logger.debug("Interrupted while waiting for roll service to stop. " + "Please report this.", e);
+            }
+        }
+
         logger.info("RollingFile sink {} stopped. Event metrics: {}", getName(), sinkCounter);
+    }
+
+
+    private File getCurrentFile() {
+        if (currentFile == null) {
+            currentFile = new File(this.directory + "/" + df.format(new Date()));
+        }
+        return currentFile;
     }
 
 }
