@@ -133,25 +133,30 @@ public class RedisMonitorServer implements MonitorService {
                         String attribute = (String) i$1.next();
                         //key
                         String key = "flume." + component + "." + attribute;
-                        //value值
-                        Long newValue = Long.parseLong(attributeMap.get(attribute).toString());
 
 
-                        //获取原有的值
-                        Long oldValue = valMap.get(key);
-                        if (oldValue == null) {
-                            oldValue = 0L;
+                        try {
+                            //value值
+                            Long newValue = Long.parseLong(attributeMap.get(attribute).toString());
+                            //获取原有的值
+                            Long oldValue = valMap.get(key);
+                            if (oldValue == null) {
+                                oldValue = 0L;
+                            }
+
+
+                            //redis key
+                            String timeKey = key + "::" + df.format(currentDate);
+
+                            //发送给redis
+                            redis.set(key, String.valueOf(newValue - oldValue));
+                            //设置新值
+                            valMap.put(key, newValue);
+
+                        } catch (Exception e) {
+                            RedisMonitorServer.logger.warn("[" + key + "]对应的值为[" + attributeMap.get(attribute).toString() + "]");
+                            continue;
                         }
-
-
-                        //redis key
-                        String timeKey = key + "::" + df.format(currentDate);
-
-                        //发送给redis
-                        redis.set(key, String.valueOf(newValue - oldValue));
-                        //设置新值
-                        valMap.put(key, newValue);
-
                     }
                 }
             } catch (Throwable t) {
