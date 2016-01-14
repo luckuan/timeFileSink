@@ -51,7 +51,7 @@ public class RedisMonitorServer implements MonitorService {
 
 
     //保存历史数据
-    private Map<String, Long> valMap = new ConcurrentHashMap<String, Long>();
+    private Map<String, Long> valMap = null;
 
     public void start() {
         //创建redis客户端
@@ -66,6 +66,11 @@ public class RedisMonitorServer implements MonitorService {
 
         //开始调度,每一分钟调度一次.
         this.ScheduledExecutorService.scheduleWithFixedDelay(this.collectorRunnable, 10L, 60L, TimeUnit.SECONDS);
+
+        //保存历史数据,每次重启,都需要清零的
+        if (valMap == null) {
+            valMap = new ConcurrentHashMap<String, Long>();
+        }
     }
 
     public void stop() {
@@ -73,6 +78,9 @@ public class RedisMonitorServer implements MonitorService {
         if (redis != null) {
             redis.close();
         }
+
+        //将保存的数据清理
+        valMap.clear();
 
         //将调度器关闭
         this.ScheduledExecutorService.shutdown();
