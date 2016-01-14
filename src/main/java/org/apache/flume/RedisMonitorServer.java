@@ -65,7 +65,7 @@ public class RedisMonitorServer implements MonitorService {
         }
 
         //开始调度,每一分钟调度一次.
-        this.ScheduledExecutorService.scheduleWithFixedDelay(this.collectorRunnable, 60L, 60L, TimeUnit.SECONDS);
+        this.ScheduledExecutorService.scheduleWithFixedDelay(this.collectorRunnable, 10L, 60L, TimeUnit.SECONDS);
     }
 
     public void stop() {
