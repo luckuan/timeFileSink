@@ -8,6 +8,7 @@ import redis.clients.jedis.Jedis;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -109,6 +110,8 @@ public class RedisMonitorServer implements MonitorService {
                 //迭代器
                 Iterator i$ = t.keySet().iterator();
 
+                Date currentDate = new Date();
+
                 while (i$.hasNext()) {
                     //获取组件
                     String component = (String) i$.next();
@@ -134,7 +137,7 @@ public class RedisMonitorServer implements MonitorService {
 
 
                         //redis key
-                        String timeKey = key + "::" + "";
+                        String timeKey = key + "::" + df.format(currentDate);
 
                         //发送给redis
                         redis.set(key, String.valueOf(newValue - oldValue));
